@@ -1,0 +1,18 @@
+[workspace]
+resolver = "2"
+members = [
+    "projects/*",
+    "examples/mini-go",
+    "examples/mini-ts",
+]
+default-members = [
+    "projects/gaia-frontend",
+]
+exclude = [
+    "projects/.DS_Store",
+    "projects/gaia-frontend-wasm32",
+]
+
+[profile.release]
+lto = true
+panic = "abort"
