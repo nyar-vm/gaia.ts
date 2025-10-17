@@ -91,14 +91,22 @@ export class Parser {
     }
 
     private error(message: string): never {
-        throw new Error(message);
+        throw new Error(`Parse error at line ${this.peek().line}: ${message}`);
     }
 
     private getTokenValue(token: Token): string | number | boolean {
-        if ('value' in token) {
-            return token.value;
+        switch (token.type) {
+            case 'String':
+                return token.value.slice(1, -1); // 移除引号
+            case 'Number':
+                return parseFloat(token.value);
+            case 'Boolean':
+                return token.value === 'true';
+            case 'Rune':
+                return token.value.slice(1, -1); // 移除单引号
+            default:
+                return token.value;
         }
-        throw new Error(`Token ${token.kind} does not have a value property`);
     }
 
     public parse(): Program {
@@ -956,7 +964,7 @@ export class Parser {
         return expr;
     }
 
-    private finishCall(callee: Expression): Expression {
+    private finishCall(callee: Expression): CallExpression {
         const args: Expression[] = [];
 
         if (!this.check('Punctuation') || this.getTokenValue(this.peek()) !== ')') {

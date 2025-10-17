@@ -36,14 +36,11 @@ import {
     StructDeclaration,
     InterfaceDeclaration,
     TypeDeclaration,
-    GoType
+    GoType,
+    CaseClause
 } from './ast';
 
-// 假设我们有一个gaia-frontend-wasm32库可以导入
-// 在实际实现中，这里会导入实际的Gaia类型和函数
-// import { GaiaInstruction, GaiaProgram, GaiaFunction, GaiaType } from 'gaia-frontend-wasm32';
-
-// 为了示例，我们先定义一些基本的Gaia类型
+// 占位符类，实际应该从 gaia-frontend 导入
 class GaiaInstruction {
     constructor(public opcode: string, public operands: any[] = []) {
     }
@@ -74,25 +71,22 @@ export class CodeGenerator {
     private types: Map<string, GoType> = new Map();
     private labels: Map<string, number> = new Map();
     private deferStack: GaiaInstruction[][] = [];
+    private labelCounter: number = 0;
 
     constructor() {
         this.program = new GaiaProgram([]);
     }
 
     public generate(program: Program): GaiaProgram {
-        this.program = new GaiaProgram([]);
-        
         // 处理包声明
-        if (program.package) {
-            // 在实际实现中，这里可能需要设置包信息
-        }
+        // 在实际实现中，这里可能需要设置包的元数据
 
         // 处理导入声明
         for (const importDecl of program.imports) {
             this.generateImport(importDecl);
         }
 
-        // 处理声明
+        // 处理顶级声明
         for (const decl of program.declarations) {
             this.generateDeclaration(decl);
         }
@@ -258,29 +252,28 @@ export class CodeGenerator {
             case 'ExpressionStatement':
                 return this.generateExpressionStatement(stmt);
             default:
-                throw new Error(`Unsupported statement kind: ${stmt.kind}`);
+                throw new Error(`Unsupported statement kind: ${(stmt as any).kind}`);
         }
     }
 
     private generateVariableDeclaration(stmt: VariableDeclaration): GaiaInstruction[] {
         const instructions: GaiaInstruction[] = [];
 
-        // 处理多个变量声明
         for (let i = 0; i < stmt.names.length; i++) {
             const name = stmt.names[i];
-            const initializer = stmt.initializers?.[i];
+            const localIndex = this.localIndex++;
+            this.localVariables.set(name, localIndex);
 
-            if (initializer) {
-                instructions.push(...this.generateExpression(initializer));
-            }
-
-            // 分配局部变量索引
-            const index = this.localIndex++;
-            this.localVariables.set(name, index);
-
-            // 如果有初始值，存储到局部变量
-            if (initializer) {
-                instructions.push(new GaiaInstruction('StoreLocal', [index]));
+            if (stmt.initializers && stmt.initializers[i]) {
+                // 生成初始化表达式
+                instructions.push(...this.generateExpression(stmt.initializers[i]));
+                // 存储到局部变量
+                instructions.push(new GaiaInstruction('StoreLocal', [localIndex]));
+            } else {
+                // 使用默认值初始化
+                const defaultValue = this.getDefaultValue(stmt.type);
+                instructions.push(new GaiaInstruction('Push', [defaultValue]));
+                instructions.push(new GaiaInstruction('StoreLocal', [localIndex]));
             }
         }
 
@@ -290,7 +283,6 @@ export class CodeGenerator {
     private generateReturnStatement(stmt: ReturnStatement): GaiaInstruction[] {
         const instructions: GaiaInstruction[] = [];
 
-        // 处理多个返回值
         if (stmt.values && stmt.values.length > 0) {
             for (const value of stmt.values) {
                 instructions.push(...this.generateExpression(value));
@@ -298,264 +290,244 @@ export class CodeGenerator {
         }
 
         instructions.push(new GaiaInstruction('Return'));
-
         return instructions;
     }
 
     private generateIfStatement(stmt: IfStatement): GaiaInstruction[] {
         const instructions: GaiaInstruction[] = [];
 
+        // 生成初始化语句（如果有）
+        if (stmt.init) {
+            instructions.push(...this.generateStatement(stmt.init));
+        }
+
         // 生成条件表达式
         instructions.push(...this.generateExpression(stmt.condition));
 
-        // 创建跳转标签
-        const elseLabel = `else_${Date.now()}`;
-        const endLabel = `end_${Date.now()}`;
+        // 创建标签
+        const elseLabel = this.generateLabel();
+        const endLabel = this.generateLabel();
 
-        // 条件跳转到else分支
+        // 条件跳转
         instructions.push(new GaiaInstruction('JumpIfFalse', [elseLabel]));
 
-        // 生成then分支
+        // 生成 then 分支
         instructions.push(...this.generateStatement(stmt.body));
-
-        // 跳转到结束
         instructions.push(new GaiaInstruction('Jump', [endLabel]));
 
-        // 生成else分支
+        // else 分支
         instructions.push(new GaiaInstruction('Label', [elseLabel]));
-
         if (stmt.else) {
             instructions.push(...this.generateStatement(stmt.else));
         }
 
-        // 结束标签
         instructions.push(new GaiaInstruction('Label', [endLabel]));
-
         return instructions;
     }
 
     private generateForStatement(stmt: ForStatement): GaiaInstruction[] {
         const instructions: GaiaInstruction[] = [];
-        
+
         // 生成初始化语句
         if (stmt.init) {
             instructions.push(...this.generateStatement(stmt.init));
         }
-        
-        // 循环开始标签
-        const loopStart = instructions.length;
-        
-        // 生成条件表达式
+
+        const loopStart = this.generateLabel();
+        const loopEnd = this.generateLabel();
+
+        instructions.push(new GaiaInstruction('Label', [loopStart]));
+
+        // 生成条件检查
         if (stmt.condition) {
-            const conditionInstructions = this.generateExpression(stmt.condition);
-            instructions.push(...conditionInstructions);
-            
-            // 条件跳转指令 - 如果条件为假，跳出循环
-            const jumpIfFalse = new GaiaInstruction('JUMP_IF_FALSE', [0]); // 占位符
-            instructions.push(jumpIfFalse);
-            
-            // 生成循环体
-            instructions.push(...this.generateStatement(stmt.body));
-            
-            // 生成更新语句
-            if (stmt.post) {
-                instructions.push(...this.generateStatement(stmt.post));
-            }
-            
-            // 跳回循环开始
-            instructions.push(new GaiaInstruction('JUMP', [loopStart]));
-            
-            // 更新条件跳转的目标地址
-            jumpIfFalse.operands[0] = instructions.length;
-        } else {
-            // 无限循环
-            instructions.push(...this.generateStatement(stmt.body));
-            
-            // 生成更新语句
-            if (stmt.post) {
-                instructions.push(...this.generateStatement(stmt.post));
-            }
-            
-            // 跳回循环开始
-            instructions.push(new GaiaInstruction('JUMP', [loopStart]));
+            instructions.push(...this.generateExpression(stmt.condition));
+            instructions.push(new GaiaInstruction('JumpIfFalse', [loopEnd]));
         }
-        
+
+        // 生成循环体
+        instructions.push(...this.generateStatement(stmt.body));
+
+        // 生成后置语句
+        if (stmt.post) {
+            instructions.push(...this.generateStatement(stmt.post));
+        }
+
+        instructions.push(new GaiaInstruction('Jump', [loopStart]));
+        instructions.push(new GaiaInstruction('Label', [loopEnd]));
+
         return instructions;
     }
 
     private generateRangeStatement(stmt: RangeStatement): GaiaInstruction[] {
         const instructions: GaiaInstruction[] = [];
-        
-        // 生成被迭代的表达式
+
+        // 生成可迭代对象
         instructions.push(...this.generateExpression(stmt.iterable));
-        
-        // 创建迭代器
-        instructions.push(new GaiaInstruction('CREATE_ITERATOR'));
-        
-        // 循环开始标签
-        const loopStart = instructions.length;
-        
-        // 检查迭代器是否有下一个元素
-        instructions.push(new GaiaInstruction('ITERATOR_HAS_NEXT'));
-        
-        // 如果没有下一个元素，跳出循环
-        const jumpIfFalse = new GaiaInstruction('JUMP_IF_FALSE', [0]); // 占位符
-        instructions.push(jumpIfFalse);
-        
+
+        const loopStart = this.generateLabel();
+        const loopEnd = this.generateLabel();
+
+        // 初始化迭代器
+        instructions.push(new GaiaInstruction('InitIterator'));
+
+        instructions.push(new GaiaInstruction('Label', [loopStart]));
+
+        // 检查是否还有元素
+        instructions.push(new GaiaInstruction('HasNext'));
+        instructions.push(new GaiaInstruction('JumpIfFalse', [loopEnd]));
+
         // 获取下一个元素
-        instructions.push(new GaiaInstruction('ITERATOR_NEXT'));
-        
-        // 将值赋给循环变量
-        if (stmt.key) {
-            instructions.push(new GaiaInstruction('STORE_LOCAL', [this.getLocalIndex(stmt.key.name)]));
-        }
         if (stmt.value) {
-            instructions.push(new GaiaInstruction('STORE_LOCAL', [this.getLocalIndex(stmt.value.name)]));
+            // key, value := range iterable
+            instructions.push(new GaiaInstruction('NextKeyValue'));
+            const valueIndex = this.getLocalIndex(stmt.value.name);
+            instructions.push(new GaiaInstruction('StoreLocal', [valueIndex]));
+        } else {
+            // key := range iterable
+            instructions.push(new GaiaInstruction('NextKey'));
         }
-        
+
+        const keyIndex = this.getLocalIndex(stmt.key.name);
+        instructions.push(new GaiaInstruction('StoreLocal', [keyIndex]));
+
         // 生成循环体
         instructions.push(...this.generateStatement(stmt.body));
-        
-        // 跳回循环开始
-        instructions.push(new GaiaInstruction('JUMP', [loopStart]));
-        
-        // 更新条件跳转的目标地址
-        jumpIfFalse.operands[0] = instructions.length;
-        
+
+        instructions.push(new GaiaInstruction('Jump', [loopStart]));
+        instructions.push(new GaiaInstruction('Label', [loopEnd]));
+
         return instructions;
     }
 
     private generateSwitchStatement(stmt: SwitchStatement): GaiaInstruction[] {
         const instructions: GaiaInstruction[] = [];
-        
-        // 生成 switch 表达式
+
+        // 生成初始化语句（如果有）
+        if (stmt.init) {
+            instructions.push(...this.generateStatement(stmt.init));
+        }
+
+        // 生成 tag 表达式（如果有）
         if (stmt.tag) {
             instructions.push(...this.generateExpression(stmt.tag));
+        } else {
+            // 如果没有 tag，默认为 true
+            instructions.push(new GaiaInstruction('Push', [true]));
         }
-        
-        const caseJumps: GaiaInstruction[] = [];
-        const endJumps: GaiaInstruction[] = [];
-        
-        // 为每个 case 生成代码
-        for (const caseClause of stmt.cases) {
-            if (caseClause.values) {
-                // 普通 case
-                for (const value of caseClause.values) {
-                    // 复制 switch 表达式的值
-                    instructions.push(new GaiaInstruction('DUP'));
-                    // 生成 case 值
-                    instructions.push(...this.generateExpression(value));
-                    // 比较
-                    instructions.push(new GaiaInstruction('EQUAL'));
-                    // 如果相等，跳转到 case 体
-                    const jumpIfTrue = new GaiaInstruction('JUMP_IF_TRUE', [0]); // 占位符
-                    instructions.push(jumpIfTrue);
-                    caseJumps.push(jumpIfTrue);
-                }
-            } else {
-                // default case
-                const jumpToDefault = new GaiaInstruction('JUMP', [0]); // 占位符
-                instructions.push(jumpToDefault);
-                caseJumps.push(jumpToDefault);
-            }
+
+        const endLabel = this.generateLabel();
+        const caseLabels: string[] = [];
+
+        // 为每个 case 生成标签
+        for (let i = 0; i < stmt.cases.length; i++) {
+            caseLabels.push(this.generateLabel());
         }
-        
-        // 如果没有匹配的 case，跳到结束
-        const jumpToEnd = new GaiaInstruction('JUMP', [0]); // 占位符
-        instructions.push(jumpToEnd);
-        endJumps.push(jumpToEnd);
-        
-        // 生成每个 case 的代码体
+
+        // 生成 case 匹配逻辑
         for (let i = 0; i < stmt.cases.length; i++) {
             const caseClause = stmt.cases[i];
             
-            // 更新跳转地址
-            if (caseJumps[i]) {
-                caseJumps[i].operands[0] = instructions.length;
+            if (caseClause.values) {
+                // 普通 case
+                for (const value of caseClause.values) {
+                    instructions.push(new GaiaInstruction('Dup')); // 复制 tag 值
+                    instructions.push(...this.generateExpression(value));
+                    instructions.push(new GaiaInstruction('CompareEqual'));
+                    instructions.push(new GaiaInstruction('JumpIfTrue', [caseLabels[i]]));
+                }
+            } else {
+                // default case
+                instructions.push(new GaiaInstruction('Jump', [caseLabels[i]]));
+            }
+        }
+
+        // 如果没有匹配的 case，跳到结束
+        instructions.push(new GaiaInstruction('Jump', [endLabel]));
+
+        // 生成各个 case 的代码
+        for (let i = 0; i < stmt.cases.length; i++) {
+            const caseClause = stmt.cases[i];
+            instructions.push(new GaiaInstruction('Label', [caseLabels[i]]));
+            
+            for (const bodyStmt of caseClause.body) {
+                instructions.push(...this.generateStatement(bodyStmt));
             }
             
-            // 生成 case 体
-            for (const statement of caseClause.body) {
-                instructions.push(...this.generateStatement(statement));
-            }
-            
-            // 默认跳到结束（Go 中没有自动 fallthrough）
-            const jumpToEnd = new GaiaInstruction('JUMP', [0]); // 占位符
-            instructions.push(jumpToEnd);
-            endJumps.push(jumpToEnd);
+            // 如果没有 break，继续执行下一个 case（fallthrough）
+            // Go 默认不会 fallthrough，所以这里添加跳转到结束
+            instructions.push(new GaiaInstruction('Jump', [endLabel]));
         }
-        
-        // 更新所有跳到结束的地址
-        for (const jump of endJumps) {
-            jump.operands[0] = instructions.length;
-        }
-        
+
+        instructions.push(new GaiaInstruction('Label', [endLabel]));
+        instructions.push(new GaiaInstruction('Pop')); // 清理栈上的 tag 值
+
         return instructions;
     }
 
     private generateBlockStatement(stmt: BlockStatement): GaiaInstruction[] {
         const instructions: GaiaInstruction[] = [];
-        
+
         for (const statement of stmt.statements) {
             instructions.push(...this.generateStatement(statement));
         }
-        
+
         return instructions;
     }
 
     private generateBreakStatement(stmt: BreakStatement): GaiaInstruction[] {
-        // 在实际实现中，这里需要跳转到最近的循环或 switch 的结束
-        return [new GaiaInstruction('BREAK')];
+        // 在实际实现中，需要跳转到最近的循环或 switch 的结束标签
+        return [new GaiaInstruction('Break', [stmt.label])];
     }
 
     private generateContinueStatement(stmt: ContinueStatement): GaiaInstruction[] {
-        // 在实际实现中，这里需要跳转到最近的循环的开始
-        return [new GaiaInstruction('CONTINUE')];
+        // 在实际实现中，需要跳转到最近的循环的开始标签
+        return [new GaiaInstruction('Continue', [stmt.label])];
     }
 
     private generateGotoStatement(stmt: GotoStatement): GaiaInstruction[] {
-        return [new GaiaInstruction('GOTO', [stmt.label])];
+        return [new GaiaInstruction('Jump', [stmt.label])];
     }
 
     private generateLabeledStatement(stmt: LabeledStatement): GaiaInstruction[] {
         const instructions: GaiaInstruction[] = [];
-        
-        // 记录标签位置
-        this.labels.set(stmt.label, instructions.length);
-        
-        // 生成标签后的语句
+
+        // 设置标签
+        instructions.push(new GaiaInstruction('Label', [stmt.label]));
+        this.labels.set(stmt.label, instructions.length - 1);
+
+        // 生成语句
         instructions.push(...this.generateStatement(stmt.statement));
-        
+
         return instructions;
     }
 
     private generateDeferStatement(stmt: DeferStatement): GaiaInstruction[] {
-        // 将 defer 语句的指令添加到 defer 栈中
+        // defer 语句需要在函数返回时执行
+        // 这里简化处理，将 defer 的调用添加到 defer 栈中
         const deferInstructions = this.generateExpression(stmt.call);
         this.deferStack.push(deferInstructions);
-        
-        // defer 语句本身不生成立即执行的指令
+
+        // 返回空指令，实际的 defer 执行会在函数返回时处理
         return [];
     }
 
     private generateGoStatement(stmt: GoStatement): GaiaInstruction[] {
-        // 生成 goroutine 启动指令
         const instructions: GaiaInstruction[] = [];
-        
-        // 生成要在 goroutine 中执行的调用
-        const goroutineInstructions = this.generateExpression(stmt.call);
-        
-        // 创建 goroutine
-        instructions.push(new GaiaInstruction('CREATE_GOROUTINE', [goroutineInstructions]));
-        
+
+        // 生成函数调用指令
+        instructions.push(...this.generateExpression(stmt.call));
+
+        // 创建新的 goroutine
+        instructions.push(new GaiaInstruction('StartGoroutine'));
+
         return instructions;
     }
 
     private generateExpressionStatement(stmt: ExpressionStatement): GaiaInstruction[] {
         const instructions = this.generateExpression(stmt.expression);
-
-        // 如果表达式有结果但未被使用，弹出它
-        if (stmt.expression.kind !== 'CallExpression') {
+        
+        // 如果表达式有返回值但不被使用，需要从栈中弹出
+        if (this.expressionHasValue(stmt.expression)) {
             instructions.push(new GaiaInstruction('Pop'));
         }
 
@@ -592,54 +564,144 @@ export class CodeGenerator {
     }
 
     private generateIdentifier(expr: Identifier): GaiaInstruction[] {
-        const index = this.localVariables.get(expr.name);
-
-        if (index === undefined) {
-            throw new Error(`Undefined variable: ${expr.name}`);
+        // 检查是否是常量
+        if (this.constants.has(expr.name)) {
+            const constant = this.constants.get(expr.name)!;
+            return this.generateExpression(constant);
         }
 
-        return [new GaiaInstruction('LoadLocal', [index])];
+        // 检查是否是局部变量
+        const localIndex = this.localVariables.get(expr.name);
+        if (localIndex !== undefined) {
+            return [new GaiaInstruction('LoadLocal', [localIndex])];
+        }
+
+        // 检查是否是全局变量
+        if (this.globalVariables.has(expr.name)) {
+            return [new GaiaInstruction('LoadGlobal', [expr.name])];
+        }
+
+        throw new Error(`Undefined variable: ${expr.name}`);
     }
 
     private generateBinaryExpression(expr: BinaryExpression): GaiaInstruction[] {
         const instructions: GaiaInstruction[] = [];
 
-        // 生成左右操作数
+        // 处理短路运算符
+        if (expr.operator === '&&') {
+            const falseLabel = this.generateLabel();
+            const endLabel = this.generateLabel();
+
+            instructions.push(...this.generateExpression(expr.left));
+            instructions.push(new GaiaInstruction('Dup'));
+            instructions.push(new GaiaInstruction('JumpIfFalse', [falseLabel]));
+            instructions.push(new GaiaInstruction('Pop'));
+            instructions.push(...this.generateExpression(expr.right));
+            instructions.push(new GaiaInstruction('Jump', [endLabel]));
+            instructions.push(new GaiaInstruction('Label', [falseLabel]));
+            instructions.push(new GaiaInstruction('Label', [endLabel]));
+
+            return instructions;
+        }
+
+        if (expr.operator === '||') {
+            const trueLabel = this.generateLabel();
+            const endLabel = this.generateLabel();
+
+            instructions.push(...this.generateExpression(expr.left));
+            instructions.push(new GaiaInstruction('Dup'));
+            instructions.push(new GaiaInstruction('JumpIfTrue', [trueLabel]));
+            instructions.push(new GaiaInstruction('Pop'));
+            instructions.push(...this.generateExpression(expr.right));
+            instructions.push(new GaiaInstruction('Jump', [endLabel]));
+            instructions.push(new GaiaInstruction('Label', [trueLabel]));
+            instructions.push(new GaiaInstruction('Label', [endLabel]));
+
+            return instructions;
+        }
+
+        // 处理赋值运算符
+        if (expr.operator === '=' || expr.operator === ':=') {
+            if (expr.left.kind === 'Identifier') {
+                instructions.push(...this.generateExpression(expr.right));
+                
+                if (expr.operator === ':=') {
+                    // 短变量声明
+                    const localIndex = this.localIndex++;
+                    this.localVariables.set(expr.left.name, localIndex);
+                    instructions.push(new GaiaInstruction('StoreLocal', [localIndex]));
+                } else {
+                    // 普通赋值
+                    const localIndex = this.localVariables.get(expr.left.name);
+                    if (localIndex !== undefined) {
+                        instructions.push(new GaiaInstruction('StoreLocal', [localIndex]));
+                    } else if (this.globalVariables.has(expr.left.name)) {
+                        instructions.push(new GaiaInstruction('StoreGlobal', [expr.left.name]));
+                    } else {
+                        throw new Error(`Undefined variable: ${expr.left.name}`);
+                    }
+                }
+                return instructions;
+            }
+        }
+
+        // 普通二元运算符
         instructions.push(...this.generateExpression(expr.left));
         instructions.push(...this.generateExpression(expr.right));
 
         // 根据运算符生成对应的指令
         switch (expr.operator) {
-            case 'Add':
+            case '+':
                 instructions.push(new GaiaInstruction('Add'));
                 break;
-            case 'Subtract':
+            case '-':
                 instructions.push(new GaiaInstruction('Subtract'));
                 break;
-            case 'Multiply':
+            case '*':
                 instructions.push(new GaiaInstruction('Multiply'));
                 break;
-            case 'Divide':
+            case '/':
                 instructions.push(new GaiaInstruction('Divide'));
                 break;
-            case 'Equal':
+            case '%':
+                instructions.push(new GaiaInstruction('Modulo'));
+                break;
+            case '==':
                 instructions.push(new GaiaInstruction('CompareEqual'));
                 break;
-            case 'NotEqual':
+            case '!=':
                 instructions.push(new GaiaInstruction('CompareEqual'));
                 instructions.push(new GaiaInstruction('Not'));
                 break;
-            case 'LessThan':
+            case '<':
                 instructions.push(new GaiaInstruction('CompareLess'));
                 break;
-            case 'LessThanOrEqual':
+            case '<=':
                 instructions.push(new GaiaInstruction('CompareLessOrEqual'));
                 break;
-            case 'GreaterThan':
+            case '>':
                 instructions.push(new GaiaInstruction('CompareGreater'));
                 break;
-            case 'GreaterThanOrEqual':
+            case '>=':
                 instructions.push(new GaiaInstruction('CompareGreaterOrEqual'));
+                break;
+            case '&':
+                instructions.push(new GaiaInstruction('BitwiseAnd'));
+                break;
+            case '|':
+                instructions.push(new GaiaInstruction('BitwiseOr'));
+                break;
+            case '^':
+                instructions.push(new GaiaInstruction('BitwiseXor'));
+                break;
+            case '<<':
+                instructions.push(new GaiaInstruction('ShiftLeft'));
+                break;
+            case '>>':
+                instructions.push(new GaiaInstruction('ShiftRight'));
+                break;
+            case '&^':
+                instructions.push(new GaiaInstruction('BitwiseAndNot'));
                 break;
             default:
                 throw new Error(`Unsupported binary operator: ${expr.operator}`);
@@ -651,27 +713,46 @@ export class CodeGenerator {
     private generateUnaryExpression(expr: UnaryExpression): GaiaInstruction[] {
         const instructions: GaiaInstruction[] = [];
 
+        // 处理前置递增/递减
+        if (expr.operator === '++' || expr.operator === '--') {
+            if (expr.operand.kind === 'Identifier') {
+                const localIndex = this.localVariables.get(expr.operand.name);
+                if (localIndex !== undefined) {
+                    instructions.push(new GaiaInstruction('LoadLocal', [localIndex]));
+                    instructions.push(new GaiaInstruction('Push', [1]));
+                    instructions.push(new GaiaInstruction(expr.operator === '++' ? 'Add' : 'Subtract'));
+                    instructions.push(new GaiaInstruction('Dup'));
+                    instructions.push(new GaiaInstruction('StoreLocal', [localIndex]));
+                } else {
+                    throw new Error(`Undefined variable: ${expr.operand.name}`);
+                }
+            } else {
+                throw new Error('Invalid operand for increment/decrement');
+            }
+            return instructions;
+        }
+
         // 生成操作数
         instructions.push(...this.generateExpression(expr.operand));
 
         // 根据运算符生成对应的指令
         switch (expr.operator) {
-            case 'Minus':
+            case '-':
                 instructions.push(new GaiaInstruction('Negate'));
                 break;
-            case 'Not':
+            case '!':
                 instructions.push(new GaiaInstruction('Not'));
                 break;
-            case 'Plus':
+            case '+':
                 // 一元加号通常不需要操作
                 break;
-            case 'BitwiseNot':
+            case '^':
                 instructions.push(new GaiaInstruction('BitwiseNot'));
                 break;
-            case 'Address':
+            case '&':
                 instructions.push(new GaiaInstruction('Address'));
                 break;
-            case 'Dereference':
+            case '*':
                 instructions.push(new GaiaInstruction('Dereference'));
                 break;
             default:
@@ -693,13 +774,18 @@ export class CodeGenerator {
         let functionName: string;
         if (expr.callee.kind === 'Identifier') {
             functionName = expr.callee.name;
+            
+            // 检查是否是内置函数
+            if (this.isBuiltinFunction(functionName)) {
+                instructions.push(new GaiaInstruction('CallBuiltin', [functionName, expr.arguments.length]));
+            } else {
+                instructions.push(new GaiaInstruction('Call', [functionName, expr.arguments.length]));
+            }
         } else {
             // 对于复杂的调用表达式，先生成 callee
             instructions.push(...this.generateExpression(expr.callee));
-            functionName = 'dynamic_call';
+            instructions.push(new GaiaInstruction('CallIndirect', [expr.arguments.length]));
         }
-        
-        instructions.push(new GaiaInstruction('Call', [functionName, expr.arguments.length]));
 
         return instructions;
     }
@@ -776,5 +862,37 @@ export class CodeGenerator {
             this.localVariables.set(name, index);
         }
         return index;
+    }
+
+    private generateLabel(): string {
+        return `L${this.labelCounter++}`;
+    }
+
+    private getDefaultValue(type: GoType | undefined): any {
+        if (!type) return 0;
+        
+        if (typeof type === 'string') {
+            switch (type) {
+                case 'bool': return false;
+                case 'string': return '';
+                case 'int': case 'int8': case 'int16': case 'int32': case 'int64':
+                case 'uint': case 'uint8': case 'uint16': case 'uint32': case 'uint64':
+                case 'float32': case 'float64': case 'byte': case 'rune':
+                    return 0;
+                default: return null;
+            }
+        }
+        
+        return null;
+    }
+
+    private expressionHasValue(expr: Expression): boolean {
+        // 大多数表达式都有返回值，除了一些特殊情况
+        return expr.kind !== 'CallExpression' || true; // 简化处理
+    }
+
+    private isBuiltinFunction(name: string): boolean {
+        const builtins = ['print', 'println', 'len', 'cap', 'make', 'new', 'append', 'copy', 'delete'];
+        return builtins.includes(name);
     }
 }

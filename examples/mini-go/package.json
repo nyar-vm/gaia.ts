@@ -9,6 +9,7 @@
         "test": "vitest run",
         "test:watch": "vitest",
         "test:ui": "vitest --ui",
+        "coverage": "vitest run --coverage",
         "test:go": "node test/run-tests.js",
         "dev": "ts-node src/index.ts",
         "compile:hello": "npm run build && node dist/index.js test/hello.go",
