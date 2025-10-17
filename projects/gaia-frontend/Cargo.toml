@@ -19,6 +19,7 @@ wit-bindgen = "0.46"
 [dependencies.gaia-assembler]
 path = "../../../project-gaia/projects/gaia-assembler"
 features = []
+default-features = false
 
 [dev-dependencies]
 

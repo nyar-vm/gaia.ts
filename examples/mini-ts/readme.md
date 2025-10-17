@@ -109,6 +109,25 @@ function add(a: number, b: number): number {
 ]
 ```
 
+**词法分析流程图：**
+
+```mermaid
+flowchart TD
+    A[TypeScript源代码] --> B[字符扫描]
+    B --> C{识别关键字}
+    C -->|function| D[FUNCTION token]
+    C -->|number| E[TYPE_NUMBER token]
+    C -->|标识符| F[IDENTIFIER token]
+    C -->|符号| G[SYMBOL token]
+    C -->|数字| H[NUMBER token]
+    D --> I[token序列]
+    E --> I
+    F --> I
+    G --> I
+    H --> I
+    I --> J[词法分析完成]
+```
+
 ### 2. 语法分析器 (Parser)
 
 将词法单元解析为抽象语法树（AST）：
@@ -128,6 +147,36 @@ interface FunctionDeclaration {
     body: Statement[];
     isArrow?: boolean;
 }
+```
+
+**语法分析流程图：**
+
+```mermaid
+flowchart TD
+    A[token序列] --> B[程序入口]
+    B --> C{查找函数声明}
+    C -->|function| D[解析函数]
+    C -->|interface| E[解析接口]
+    C -->|class| F[解析类]
+    C -->|import| G[解析导入]
+    
+    D --> H[函数名]
+    D --> I[参数列表]
+    D --> J[返回类型]
+    D --> K[函数体]
+    
+    H --> L[AST节点]
+    I --> L
+    J --> L
+    K --> L
+    
+    E --> L
+    F --> L
+    G --> L
+    
+    L --> M{更多声明?}
+    M -->|是| C
+    M -->|否| N[AST构建完成]
 ```
 
 ### 3. 抽象语法树 (AST)
@@ -165,6 +214,31 @@ function multiply: (number, number) -> number {
     multiply.number
     return
 }
+```
+
+**代码生成流程图：**
+
+```mermaid
+flowchart TD
+    A[AST根节点] --> B[遍历AST]
+    B --> C{节点类型}
+    
+    C -->|函数声明| D[生成函数头]
+    C -->|变量声明| E[生成变量定义]
+    C -->|返回语句| F[生成返回指令]
+    C -->|表达式| G[生成表达式代码]
+    C -->|控制流| H[生成控制流代码]
+    
+    D --> I[汇编代码片段]
+    E --> I
+    F --> I
+    G --> I
+    H --> I
+    
+    I --> J{更多节点?}
+    J -->|是| B
+    J -->|否| K[汇编代码合并]
+    K --> L[最终汇编代码]
 ```
 
 ## 🧪 示例代码
@@ -214,6 +288,27 @@ class Calculator {
 
 ## 🛠️ 开发指南
 
+### 编译流程总览
+
+```mermaid
+flowchart LR
+    A[TypeScript源码] --> B[词法分析器]
+    B --> C[Token序列]
+    C --> D[语法分析器]
+    D --> E[AST抽象语法树]
+    E --> F[类型检查器]
+    F --> G[类型验证后的AST]
+    G --> H[代码生成器]
+    H --> I[Gaia汇编代码]
+    I --> J[Gaia汇编器]
+    J --> K[可执行代码]
+    
+    style A fill:#e1f5fe
+    style E fill:#f3e5f5
+    style I fill:#e8f5e8
+    style K fill:#fff3e0
+```
+
 ### 运行测试
 
 ```bash
@@ -258,6 +353,15 @@ npm run dev test/example.ts
 - 泛型（基础）
 - 模块导入/导出（基础）
 
+**特性支持状态图：**
+
+```mermaid
+pie title TypeScript特性支持状态
+    "已支持" : 16
+    "计划支持" : 9
+    "暂不支持" : 7
+```
+
 ### 🚧 计划支持
 
 - 枚举类型
@@ -300,6 +404,33 @@ if (result.success) {
 }
 ```
 
+**集成架构图：**
+
+```mermaid
+flowchart TB
+    subgraph "Mini-TS 编译器"
+        A[TypeScript源码] --> B[编译器核心]
+        B --> C[Gaia汇编代码]
+    end
+    
+    subgraph "Gaia WASM32 前端"
+        C --> D[@nyar/gaia-assembler-wasm32]
+        D --> E[汇编器实例]
+        E --> F[编译结果]
+    end
+    
+    subgraph "Node.js 环境"
+        F --> G[JavaScript对象]
+        G --> H[控制台输出]
+        G --> I[文件写入]
+        G --> J[网络传输]
+    end
+    
+    style A fill:#e3f2fd
+    style C fill:#e8f5e9
+    style F fill:#fff3e0
+```
+
 ## 🎯 TypeScript 特色功能
 
 ### 类型系统
@@ -316,6 +447,31 @@ let isActive: boolean = true;
 function processData(data: string[]): number {
     return data.length;
 }
+```
+
+**类型检查流程图：**
+
+```mermaid
+flowchart TD
+    A[AST节点] --> B{需要类型检查?}
+    B -->|是| C[获取节点类型]
+    B -->|否| D[跳过检查]
+    
+    C --> E{类型匹配?}
+    E -->|是| F[类型检查通过]
+    E -->|否| G[类型错误]
+    
+    F --> H[继续下一个节点]
+    G --> I[报告错误]
+    D --> H
+    
+    H --> J{更多节点?}
+    J -->|是| A
+    J -->|否| K[类型检查完成]
+    
+    style F fill:#e8f5e9
+    style G fill:#ffebee
+    style I fill:#ffebee
 ```
 
 ### 接口和类
@@ -341,6 +497,35 @@ class Rectangle implements Shape {
 }
 ```
 
+**类继承关系图：**
+
+```mermaid
+classDiagram
+    class Shape {
+        <<interface>>
+        +area(): number
+        +perimeter(): number
+    }
+    
+    class Rectangle {
+        -width: number
+        -height: number
+        +constructor(w: number, h: number)
+        +area(): number
+        +perimeter(): number
+    }
+    
+    class Circle {
+        -radius: number
+        +constructor(r: number)
+        +area(): number
+        +perimeter(): number
+    }
+    
+    Shape <|-- Rectangle : implements
+    Shape <|-- Circle : implements
+```
+
 ### 泛型支持
 
 ```typescript
@@ -361,6 +546,32 @@ class Container<T> {
         return this.value;
     }
 }
+```
+
+**泛型实例化流程图：**
+
+```mermaid
+flowchart LR
+    A[泛型定义] --> B{类型参数}
+    B --> C[T]
+    B --> D[U]
+    B --> E[V]
+    
+    C --> F[函数调用]
+    D --> F
+    E --> F
+    
+    F --> G{传入具体类型}
+    G --> H[number]
+    G --> I[string]
+    G --> J[boolean]
+    
+    H --> K[实例化代码]
+    I --> K
+    J --> K
+    
+    K --> L[生成特化版本]
+    L --> M[编译执行]
 ```
 
 ## 📄 许可证
