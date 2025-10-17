@@ -1,11 +1,18 @@
 {
+    "name": "gaia-assembler-workspace",
     "private": true,
+    "version": "1.0.0",
+    "description": "Gaia Multi-Platform Assembler - Workspace",
     "scripts": {
-        "build": "cargo build --release",
-        "test": "cargo test --release",
-        "fmt": "cargo fmt --all",
-        "p": "git push && git push --tags --prune",
-        "reset": "git reset Head~ --soft",
-        "u": "cargo upgrade --workspace"
-    }
+        "build": "pnpm -r run build",
+        "test": "pnpm -r run test"
+    },
+    "devDependencies": {
+        "pnpm": "^8.0.0"
+    },
+    "engines": {
+        "node": ">=16.0.0",
+        "pnpm": ">=8.0.0"
+    },
+    "packageManager": "pnpm@8.0.0"
 }
