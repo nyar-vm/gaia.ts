@@ -30,6 +30,22 @@ const GO_BUILTIN_FUNCTIONS = new Set([
     'make', 'new', 'panic', 'print', 'println', 'real', 'recover'
 ]);
 
+// Go 运算符（按长度排序，确保正确匹配）
+const GO_OPERATORS = [
+    // 三字符运算符
+    '<<=', '>>=', '&^=',
+    // 双字符运算符
+    '++', '--', '==', '!=', '<=', '>=', '&&', '||', '<<', '>>', '&^',
+    ':=', '+=', '-=', '*=', '/=', '%=', '&=', '|=', '^=',
+    // 单字符运算符
+    '+', '-', '*', '/', '%', '&', '|', '^', '!', '<', '>', '=', ':'
+];
+
+// Go 标点符号
+const GO_PUNCTUATION = [
+    '(', ')', '[', ']', '{', '}', ',', ';', '.', '...'
+];
+
 export class Lexer {
     private input: string;
     private position: number = 0;
@@ -97,84 +113,75 @@ export class Lexer {
 
         while (this.peek() !== quote && this.peek() !== '\0') {
             const char = this.advance();
-
-            // 处理转义字符
-            if (char === '\\' && this.peek() !== '\0') {
+            
+            if (char === '\\') {
+                // 处理转义字符
                 const escaped = this.advance();
                 switch (escaped) {
-                    case 'a':
-                        value += '\x07'; // 响铃
-                        break;
-                    case 'b':
-                        value += '\b'; // 退格
-                        break;
-                    case 'f':
-                        value += '\f'; // 换页
-                        break;
-                    case 'n':
-                        value += '\n'; // 换行
-                        break;
-                    case 'r':
-                        value += '\r'; // 回车
-                        break;
-                    case 't':
-                        value += '\t'; // 制表符
-                        break;
-                    case 'v':
-                        value += '\v'; // 垂直制表符
-                        break;
-                    case '\\':
-                        value += '\\'; // 反斜杠
-                        break;
-                    case quote:
-                        value += quote; // 引号
-                        break;
-                    case 'x':
+                    case 'n': value += '\n'; break;
+                    case 't': value += '\t'; break;
+                    case 'r': value += '\r'; break;
+                    case '\\': value += '\\'; break;
+                    case '"': value += '"'; break;
+                    case "'": value += "'"; break;
+                    case '0': value += '\0'; break;
+                    case 'a': value += '\a'; break;
+                    case 'b': value += '\b'; break;
+                    case 'f': value += '\f'; break;
+                    case 'v': value += '\v'; break;
+                    case 'x': {
                         // 十六进制转义 \xNN
                         const hex1 = this.advance();
                         const hex2 = this.advance();
                         const hexValue = parseInt(hex1 + hex2, 16);
-                        if (isNaN(hexValue)) {
-                            throw new Error(`Invalid hex escape sequence at line ${this.line}, column ${this.column}`);
+                        if (!isNaN(hexValue)) {
+                            value += String.fromCharCode(hexValue);
+                        } else {
+                            value += '\\x' + hex1 + hex2;
                         }
-                        value += String.fromCharCode(hexValue);
                         break;
-                    case 'u':
+                    }
+                    case 'u': {
                         // Unicode 转义 \uNNNN
-                        let unicodeValue = '';
+                        let unicode = '';
                         for (let i = 0; i < 4; i++) {
-                            unicodeValue += this.advance();
+                            unicode += this.advance();
                         }
-                        const unicode = parseInt(unicodeValue, 16);
-                        if (isNaN(unicode)) {
-                            throw new Error(`Invalid unicode escape sequence at line ${this.line}, column ${this.column}`);
+                        const unicodeValue = parseInt(unicode, 16);
+                        if (!isNaN(unicodeValue)) {
+                            value += String.fromCharCode(unicodeValue);
+                        } else {
+                            value += '\\u' + unicode;
                         }
-                        value += String.fromCharCode(unicode);
                         break;
-                    case 'U':
+                    }
+                    case 'U': {
                         // Unicode 转义 \UNNNNNNNN
-                        let longUnicodeValue = '';
+                        let unicode = '';
                         for (let i = 0; i < 8; i++) {
-                            longUnicodeValue += this.advance();
+                            unicode += this.advance();
                         }
-                        const longUnicode = parseInt(longUnicodeValue, 16);
-                        if (isNaN(longUnicode)) {
-                            throw new Error(`Invalid unicode escape sequence at line ${this.line}, column ${this.column}`);
+                        const unicodeValue = parseInt(unicode, 16);
+                        if (!isNaN(unicodeValue)) {
+                            value += String.fromCodePoint(unicodeValue);
+                        } else {
+                            value += '\\U' + unicode;
                         }
-                        value += String.fromCodePoint(longUnicode);
                         break;
+                    }
                     default:
                         // 八进制转义 \NNN
                         if (/[0-7]/.test(escaped)) {
-                            let octalValue = escaped;
+                            let octal = escaped;
                             for (let i = 0; i < 2 && /[0-7]/.test(this.peek()); i++) {
-                                octalValue += this.advance();
+                                octal += this.advance();
                             }
-                            const octal = parseInt(octalValue, 8);
-                            value += String.fromCharCode(octal);
+                            const octalValue = parseInt(octal, 8);
+                            value += String.fromCharCode(octalValue);
                         } else {
                             value += escaped;
                         }
+                        break;
                 }
             } else {
                 value += char;
@@ -183,11 +190,14 @@ export class Lexer {
 
         if (this.peek() === quote) {
             this.advance(); // 消耗结束引号
-        } else {
-            throw new Error(`Unterminated string at line ${this.line}, column ${this.column}`);
         }
 
-        return {kind: 'String', value, line: startLine, column: startColumn};
+        return {
+            kind: 'String',
+            value,
+            line: startLine,
+            column: startColumn
+        };
     }
 
     private readRune(): Token {
@@ -197,85 +207,77 @@ export class Lexer {
         let value = '';
 
         if (this.peek() === '\\') {
-            // 转义字符
-            this.advance(); // 消耗反斜杠
+            // 处理转义字符
+            this.advance(); // 消耗 '\'
             const escaped = this.advance();
             switch (escaped) {
-                case 'a':
-                    value = '\x07'; // 响铃
-                    break;
-                case 'b':
-                    value = '\b'; // 退格
-                    break;
-                case 'f':
-                    value = '\f'; // 换页
-                    break;
-                case 'n':
-                    value = '\n'; // 换行
-                    break;
-                case 'r':
-                    value = '\r'; // 回车
-                    break;
-                case 't':
-                    value = '\t'; // 制表符
-                    break;
-                case 'v':
-                    value = '\v'; // 垂直制表符
-                    break;
-                case '\\':
-                    value = '\\'; // 反斜杠
-                    break;
-                case '\'':
-                    value = '\''; // 单引号
-                    break;
-                case 'x':
-                    // 十六进制转义 \xNN
+                case 'n': value = '\n'; break;
+                case 't': value = '\t'; break;
+                case 'r': value = '\r'; break;
+                case '\\': value = '\\'; break;
+                case "'": value = "'"; break;
+                case '"': value = '"'; break;
+                case '0': value = '\0'; break;
+                case 'a': value = '\a'; break;
+                case 'b': value = '\b'; break;
+                case 'f': value = '\f'; break;
+                case 'v': value = '\v'; break;
+                case 'x': {
+                    // 十六进制转义
                     const hex1 = this.advance();
                     const hex2 = this.advance();
                     const hexValue = parseInt(hex1 + hex2, 16);
-                    if (isNaN(hexValue)) {
-                        throw new Error(`Invalid hex escape sequence at line ${this.line}, column ${this.column}`);
-                    }
                     value = String.fromCharCode(hexValue);
                     break;
-                case 'u':
+                }
+                case 'u': {
                     // Unicode 转义 \uNNNN
-                    let unicodeValue = '';
+                    let unicode = '';
                     for (let i = 0; i < 4; i++) {
-                        unicodeValue += this.advance();
+                        unicode += this.advance();
                     }
-                    const unicode = parseInt(unicodeValue, 16);
-                    if (isNaN(unicode)) {
-                        throw new Error(`Invalid unicode escape sequence at line ${this.line}, column ${this.column}`);
-                    }
-                    value = String.fromCharCode(unicode);
+                    const unicodeValue = parseInt(unicode, 16);
+                    value = String.fromCharCode(unicodeValue);
                     break;
+                }
+                case 'U': {
+                    // Unicode 转义 \UNNNNNNNN
+                    let unicode = '';
+                    for (let i = 0; i < 8; i++) {
+                        unicode += this.advance();
+                    }
+                    const unicodeValue = parseInt(unicode, 16);
+                    value = String.fromCodePoint(unicodeValue);
+                    break;
+                }
                 default:
-                    // 八进制转义 \NNN
+                    // 八进制转义
                     if (/[0-7]/.test(escaped)) {
-                        let octalValue = escaped;
+                        let octal = escaped;
                         for (let i = 0; i < 2 && /[0-7]/.test(this.peek()); i++) {
-                            octalValue += this.advance();
+                            octal += this.advance();
                         }
-                        const octal = parseInt(octalValue, 8);
-                        value = String.fromCharCode(octal);
+                        const octalValue = parseInt(octal, 8);
+                        value = String.fromCharCode(octalValue);
                     } else {
                         value = escaped;
                     }
+                    break;
             }
-        } else if (this.peek() !== '\'' && this.peek() !== '\0') {
+        } else {
             value = this.advance();
-        } else {
-            throw new Error(`Empty rune literal at line ${this.line}, column ${this.column}`);
         }
 
-        if (this.peek() === '\'') {
+        if (this.peek() === "'") {
             this.advance(); // 消耗结束单引号
-        } else {
-            throw new Error(`Unterminated rune at line ${this.line}, column ${this.column}`);
         }
 
-        return {kind: 'Rune', value, line: startLine, column: startColumn};
+        return {
+            kind: 'Rune',
+            value,
+            line: startLine,
+            column: startColumn
+        };
     }
 
     private readNumber(): Token {
@@ -283,54 +285,64 @@ export class Lexer {
         const startColumn = this.column;
         let value = '';
         let isFloat = false;
+        let base = 10;
 
-        // 处理十六进制数字
-        if (this.peek() === '0' && (this.peek(1) === 'x' || this.peek(1) === 'X')) {
-            value += this.advance(); // '0'
-            value += this.advance(); // 'x' or 'X'
-            
-            while (/[0-9a-fA-F]/.test(this.peek())) {
-                value += this.advance();
-            }
-            
-            const hexValue = parseInt(value, 16);
-            return {kind: 'Number', value: hexValue, subtype: 'int', line: startLine, column: startColumn};
-        }
-
-        // 处理八进制数字
-        if (this.peek() === '0' && /[0-7]/.test(this.peek(1))) {
-            value += this.advance(); // '0'
-            
-            while (/[0-7]/.test(this.peek())) {
-                value += this.advance();
-            }
-            
-            const octalValue = parseInt(value, 8);
-            return {kind: 'Number', value: octalValue, subtype: 'int', line: startLine, column: startColumn};
-        }
-
-        // 处理十进制数字
-        while (/\d/.test(this.peek())) {
+        // 检查进制前缀
+        if (this.peek() === '0') {
             value += this.advance();
-        }
-
-        // 检查小数点
-        if (this.peek() === '.' && /\d/.test(this.peek(1))) {
-            isFloat = true;
-            value += this.advance(); // '.'
+            const next = this.peek().toLowerCase();
             
+            if (next === 'x' || next === 'X') {
+                // 十六进制
+                value += this.advance();
+                base = 16;
+                while (/[0-9a-fA-F]/.test(this.peek())) {
+                    value += this.advance();
+                }
+            } else if (next === 'b' || next === 'B') {
+                // 二进制
+                value += this.advance();
+                base = 2;
+                while (/[01]/.test(this.peek())) {
+                    value += this.advance();
+                }
+            } else if (next === 'o' || next === 'O') {
+                // 八进制（Go 1.13+）
+                value += this.advance();
+                base = 8;
+                while (/[0-7]/.test(this.peek())) {
+                    value += this.advance();
+                }
+            } else if (/[0-7]/.test(next)) {
+                // 传统八进制
+                base = 8;
+                while (/[0-7]/.test(this.peek())) {
+                    value += this.advance();
+                }
+            }
+        } else {
+            // 十进制
             while (/\d/.test(this.peek())) {
                 value += this.advance();
             }
         }
 
-        // 检查科学计数法
-        if (this.peek() === 'e' || this.peek() === 'E') {
+        // 检查小数点（仅十进制）
+        if (base === 10 && this.peek() === '.' && /\d/.test(this.peek(1))) {
             isFloat = true;
-            value += this.advance(); // 'e' or 'E'
+            value += this.advance(); // 消耗 '.'
+            while (/\d/.test(this.peek())) {
+                value += this.advance();
+            }
+        }
+
+        // 检查科学记数法（仅十进制）
+        if (base === 10 && (this.peek() === 'e' || this.peek() === 'E')) {
+            isFloat = true;
+            value += this.advance(); // 消耗 'e' 或 'E'
             
             if (this.peek() === '+' || this.peek() === '-') {
-                value += this.advance();
+                value += this.advance(); // 消耗符号
             }
             
             while (/\d/.test(this.peek())) {
@@ -338,10 +350,16 @@ export class Lexer {
             }
         }
 
-        const numValue = parseFloat(value);
+        // 检查数字后缀（Go 不支持，但为了兼容性）
+        while (/[a-zA-Z_]/.test(this.peek())) {
+            this.advance(); // 忽略后缀
+        }
+
+        const numericValue = base === 10 ? parseFloat(value) : parseInt(value, base);
+
         return {
             kind: 'Number',
-            value: numValue,
+            value: numericValue,
             subtype: isFloat ? 'float' : 'int',
             line: startLine,
             column: startColumn
@@ -353,225 +371,110 @@ export class Lexer {
         const startColumn = this.column;
         let value = '';
 
-        // 标识符必须以字母或下划线开始
-        if (/[a-zA-Z_]/.test(this.peek())) {
+        // Go 标识符可以以字母或下划线开始
+        while (/[a-zA-Z_\u0080-\uFFFF]/.test(this.peek()) || 
+               (value.length > 0 && /\d/.test(this.peek()))) {
             value += this.advance();
         }
 
-        // 后续字符可以是字母、数字或下划线
-        while (/[a-zA-Z0-9_]/.test(this.peek())) {
-            value += this.advance();
-        }
-
-        // 检查是否是关键字
+        // 检查是否为关键字
         if (GO_KEYWORDS.has(value)) {
-            return {kind: 'Keyword', value, line: startLine, column: startColumn};
+            return {
+                kind: 'Keyword',
+                value,
+                line: startLine,
+                column: startColumn
+            };
         }
 
-        // 检查是否是布尔值
+        // 检查是否为布尔字面量
         if (value === 'true' || value === 'false') {
-            return {kind: 'Boolean', value: value === 'true', line: startLine, column: startColumn};
+            return {
+                kind: 'Boolean',
+                value: value === 'true',
+                line: startLine,
+                column: startColumn
+            };
         }
 
-        return {kind: 'Identifier', value, line: startLine, column: startColumn};
+        return {
+            kind: 'Identifier',
+            value,
+            line: startLine,
+            column: startColumn
+        };
     }
 
     public nextToken(): Token {
-        this.skipWhitespace();
-        this.skipComment();
-        this.skipWhitespace();
+        while (true) {
+            this.skipWhitespace();
 
-        if (this.isAtEnd()) {
-            return {kind: 'EOF', line: this.line, column: this.column};
-        }
+            // 检查注释
+            if (this.peek() === '/' && (this.peek(1) === '/' || this.peek(1) === '*')) {
+                this.skipComment();
+                continue;
+            }
 
-        const char = this.peek();
-        const startLine = this.line;
-        const startColumn = this.column;
+            const line = this.line;
+            const column = this.column;
+            const char = this.peek();
 
-        // 字符串字面量
-        if (char === '"' || char === '`') {
-            return this.readString();
-        }
+            if (char === '\0') {
+                return { kind: 'EOF', line, column };
+            }
 
-        // 字符字面量 (rune)
-        if (char === "'") {
-            return this.readRune();
-        }
+            // 字符串字面量
+            if (char === '"' || char === '`') {
+                return this.readString();
+            }
 
-        // 数字字面量
-        if (/\d/.test(char)) {
-            return this.readNumber();
-        }
+            // 字符字面量
+            if (char === "'") {
+                return this.readRune();
+            }
 
-        // 标识符和关键字
-        if (/[a-zA-Z_]/.test(char)) {
-            return this.readIdentifier();
-        }
+            // 数字字面量
+            if (/\d/.test(char) || (char === '.' && /\d/.test(this.peek(1)))) {
+                return this.readNumber();
+            }
 
-        // 操作符和标点符号
-        switch (char) {
-            case '+':
-                this.advance();
-                if (this.peek() === '+') {
-                    this.advance();
-                    return {kind: 'Operator', value: '++', line: startLine, column: startColumn};
-                } else if (this.peek() === '=') {
-                    this.advance();
-                    return {kind: 'Operator', value: '+=', line: startLine, column: startColumn};
-                }
-                return {kind: 'Operator', value: '+', line: startLine, column: startColumn};
-            case '-':
-                this.advance();
-                if (this.peek() === '-') {
-                    this.advance();
-                    return {kind: 'Operator', value: '--', line: startLine, column: startColumn};
-                } else if (this.peek() === '=') {
-                    this.advance();
-                    return {kind: 'Operator', value: '-=', line: startLine, column: startColumn};
-                }
-                return {kind: 'Operator', value: '-', line: startLine, column: startColumn};
-            case '*':
-                this.advance();
-                if (this.peek() === '=') {
-                    this.advance();
-                    return {kind: 'Operator', value: '*=', line: startLine, column: startColumn};
-                }
-                return {kind: 'Operator', value: '*', line: startLine, column: startColumn};
-            case '/':
-                this.advance();
-                if (this.peek() === '=') {
-                    this.advance();
-                    return {kind: 'Operator', value: '/=', line: startLine, column: startColumn};
-                }
-                return {kind: 'Operator', value: '/', line: startLine, column: startColumn};
-            case '%':
-                this.advance();
-                if (this.peek() === '=') {
-                    this.advance();
-                    return {kind: 'Operator', value: '%=', line: startLine, column: startColumn};
-                }
-                return {kind: 'Operator', value: '%', line: startLine, column: startColumn};
-            case '&':
-                this.advance();
-                if (this.peek() === '&') {
-                    this.advance();
-                    return {kind: 'Operator', value: '&&', line: startLine, column: startColumn};
-                } else if (this.peek() === '=') {
-                    this.advance();
-                    return {kind: 'Operator', value: '&=', line: startLine, column: startColumn};
-                } else if (this.peek() === '^') {
-                    this.advance();
-                    if (this.peek() === '=') {
+            // 标识符和关键字
+            if (/[a-zA-Z_\u0080-\uFFFF]/.test(char)) {
+                return this.readIdentifier();
+            }
+
+            // 运算符（按长度从长到短匹配）
+            for (const op of GO_OPERATORS) {
+                if (this.input.substr(this.position, op.length) === op) {
+                    for (let i = 0; i < op.length; i++) {
                         this.advance();
-                        return {kind: 'Operator', value: '&^=', line: startLine, column: startColumn};
                     }
-                    return {kind: 'Operator', value: '&^', line: startLine, column: startColumn};
+                    return {
+                        kind: 'Operator',
+                        value: op,
+                        line,
+                        column
+                    };
                 }
-                return {kind: 'Operator', value: '&', line: startLine, column: startColumn};
-            case '|':
-                this.advance();
-                if (this.peek() === '|') {
-                    this.advance();
-                    return {kind: 'Operator', value: '||', line: startLine, column: startColumn};
-                } else if (this.peek() === '=') {
-                    this.advance();
-                    return {kind: 'Operator', value: '|=', line: startLine, column: startColumn};
-                }
-                return {kind: 'Operator', value: '|', line: startLine, column: startColumn};
-            case '^':
-                this.advance();
-                if (this.peek() === '=') {
-                    this.advance();
-                    return {kind: 'Operator', value: '^=', line: startLine, column: startColumn};
-                }
-                return {kind: 'Operator', value: '^', line: startLine, column: startColumn};
-            case '=':
-                this.advance();
-                if (this.peek() === '=') {
-                    this.advance();
-                    return {kind: 'Operator', value: '==', line: startLine, column: startColumn};
-                }
-                return {kind: 'Operator', value: '=', line: startLine, column: startColumn};
-            case '!':
-                this.advance();
-                if (this.peek() === '=') {
-                    this.advance();
-                    return {kind: 'Operator', value: '!=', line: startLine, column: startColumn};
-                }
-                return {kind: 'Operator', value: '!', line: startLine, column: startColumn};
-            case '<':
-                this.advance();
-                if (this.peek() === '<') {
-                    this.advance();
-                    if (this.peek() === '=') {
+            }
+
+            // 标点符号
+            for (const punct of GO_PUNCTUATION) {
+                if (this.input.substr(this.position, punct.length) === punct) {
+                    for (let i = 0; i < punct.length; i++) {
                         this.advance();
-                        return {kind: 'Operator', value: '<<=', line: startLine, column: startColumn};
                     }
-                    return {kind: 'Operator', value: '<<', line: startLine, column: startColumn};
-                } else if (this.peek() === '=') {
-                    this.advance();
-                    return {kind: 'Operator', value: '<=', line: startLine, column: startColumn};
-                } else if (this.peek() === '-') {
-                    this.advance();
-                    return {kind: 'Operator', value: '<-', line: startLine, column: startColumn};
+                    return {
+                        kind: 'Punctuation',
+                        value: punct,
+                        line,
+                        column
+                    };
                 }
-                return {kind: 'Operator', value: '<', line: startLine, column: startColumn};
-            case '>':
-                this.advance();
-                if (this.peek() === '>') {
-                    this.advance();
-                    if (this.peek() === '=') {
-                        this.advance();
-                        return {kind: 'Operator', value: '>>=', line: startLine, column: startColumn};
-                    }
-                    return {kind: 'Operator', value: '>>', line: startLine, column: startColumn};
-                } else if (this.peek() === '=') {
-                    this.advance();
-                    return {kind: 'Operator', value: '>=', line: startLine, column: startColumn};
-                }
-                return {kind: 'Operator', value: '>', line: startLine, column: startColumn};
-            case ':':
-                this.advance();
-                if (this.peek() === '=') {
-                    this.advance();
-                    return {kind: 'Operator', value: ':=', line: startLine, column: startColumn};
-                }
-                return {kind: 'Punctuation', value: ':', line: startLine, column: startColumn};
-            case ';':
-                this.advance();
-                return {kind: 'Punctuation', value: ';', line: startLine, column: startColumn};
-            case ',':
-                this.advance();
-                return {kind: 'Punctuation', value: ',', line: startLine, column: startColumn};
-            case '.':
-                this.advance();
-                if (this.peek() === '.' && this.peek(1) === '.') {
-                    this.advance();
-                    this.advance();
-                    return {kind: 'Operator', value: '...', line: startLine, column: startColumn};
-                }
-                return {kind: 'Punctuation', value: '.', line: startLine, column: startColumn};
-            case '(':
-                this.advance();
-                return {kind: 'Punctuation', value: '(', line: startLine, column: startColumn};
-            case ')':
-                this.advance();
-                return {kind: 'Punctuation', value: ')', line: startLine, column: startColumn};
-            case '[':
-                this.advance();
-                return {kind: 'Punctuation', value: '[', line: startLine, column: startColumn};
-            case ']':
-                this.advance();
-                return {kind: 'Punctuation', value: ']', line: startLine, column: startColumn};
-            case '{':
-                this.advance();
-                return {kind: 'Punctuation', value: '{', line: startLine, column: startColumn};
-            case '}':
-                this.advance();
-                return {kind: 'Punctuation', value: '}', line: startLine, column: startColumn};
-            default:
-                throw new Error(`Unexpected character '${char}' at line ${this.line}, column ${this.column}`);
+            }
+
+            // 未知字符，跳过
+            this.advance();
         }
     }
 

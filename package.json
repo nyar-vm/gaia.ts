@@ -1,11 +1,19 @@
 {
-    "name": "gaia-assembler-workspace",
+    "name": "gaia-assembler",
     "private": true,
     "version": "1.0.0",
     "description": "Gaia Multi-Platform Assembler - Workspace",
     "scripts": {
         "build": "pnpm -r run build",
-        "test": "pnpm -r run test"
+        "test": "pnpm -r run test",
+        "test:workspace:watch": "pnpm -r run test:watch",
+        "test:workspace:ui": "pnpm -r run test:ui",
+        "coverage:workspace": "pnpm -r run coverage",
+        "install:all": "pnpm install",
+        "ws:list": "node workspace.js list",
+        "ws:build": "node workspace.js build",
+        "ws:test": "node workspace.js test",
+        "ws:clean": "node workspace.js clean"
     },
     "devDependencies": {
         "pnpm": "^8.0.0"
