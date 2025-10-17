@@ -94,18 +94,18 @@ export class Parser {
         throw new Error(`Parse error at line ${this.peek().line}: ${message}`);
     }
 
-    private getTokenValue(token: Token): string | number | boolean {
-        switch (token.type) {
+    private getTokenValue(token: Token): any {
+        switch (token.kind) {
             case 'String':
                 return token.value.slice(1, -1); // 移除引号
             case 'Number':
-                return parseFloat(token.value);
+                return token.value;
             case 'Boolean':
-                return token.value === 'true';
+                return token.value;
             case 'Rune':
                 return token.value.slice(1, -1); // 移除单引号
             default:
-                return token.value;
+                return token.kind === 'EOF' ? null : (token as any).value;
         }
     }
 

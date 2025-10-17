@@ -381,22 +381,23 @@ export function typeToGaiaType(type: GoType): string {
             case 'void':
                 return 'Void';
             default:
-                throw new Error(`Unsupported type: ${type}`);
+                return 'Unknown';
         }
     } else {
-        // 处理复合类型
+        // 处理复杂类型
         switch (type.kind) {
             case 'slice':
+                return `Slice<${typeToGaiaType(type.elementType)}>`;
             case 'array':
-                return 'Array';
+                return `Array<${typeToGaiaType(type.elementType)}, ${type.size}>`;
             case 'pointer':
-                return 'Pointer';
+                return `Pointer<${typeToGaiaType(type.pointeeType)}>`;
             case 'struct':
-                return 'Struct';
+                return `Struct<${type.name}>`;
             case 'interface':
-                return 'Interface';
+                return `Interface<${type.name}>`;
             default:
-                throw new Error(`Unsupported complex type: ${JSON.stringify(type)}`);
+                return 'Unknown';
         }
     }
 }
