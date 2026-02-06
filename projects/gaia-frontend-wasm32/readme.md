@@ -24,23 +24,23 @@ Gaia 前端 WASM32 包是 Gaia 多平台汇编器的 WebAssembly 实现，提供
 
 ```bash
 # 使用 npm
-npm install @nyar/gaia-assembler-wasm32
+npm install ↯nyar/gaia-assembler-wasm32
 
 # 使用 yarn
-yarn add @nyar/gaia-assembler-wasm32
+yarn add ↯nyar/gaia-assembler-wasm32
 
 # 使用 pnpm
-pnpm add @nyar/gaia-assembler-wasm32
+pnpm add ↯nyar/gaia-assembler-wasm32
 ```
 
 ### 基本使用
 
 ```typescript
 // ES 模块导入
-import { Assembler, Metadata, Utils } from '@nyar/gaia-assembler-wasm32';
+import { Assembler, Metadata, Utils } from '↯nyar/gaia-assembler-wasm32';
 
 // CommonJS 导入
-const { Assembler, Metadata, Utils } = require('@nyar/gaia-assembler-wasm32');
+const { Assembler, Metadata, Utils } = require('↯nyar/gaia-assembler-wasm32');
 
 // 使用汇编器
 const assembler = new Assembler();
@@ -65,7 +65,7 @@ const processed = utils.processString('input text');
 </head>
 <body>
     <script type="module">
-        import { Assembler } from '@nyar/gaia-assembler-wasm32';
+        import { Assembler } from '↯nyar/gaia-assembler-wasm32';
         
         const assembler = new Assembler();
         const result = assembler.compile('assembly code');
@@ -200,7 +200,7 @@ class Utils {
 
 ```json
 {
-    "name": "@nyar/gaia-assembler-wasm32",
+    "name": "↯nyar/gaia-assembler-wasm32",
     "version": "0.1.0",
     "description": "Gaia Multi-Platform Assembler - WASM32 Frontend",
     "main": "./dist/gaia_frontend.js",
@@ -239,7 +239,7 @@ class Utils {
 
 - **GitHub Issues**: https://github.com/nyar-vm/project-gaia/issues
 - **项目文档**: https://docs.rs/gaia-frontend
-- **npm 包页面**: https://www.npmjs.com/package/@nyar/gaia-assembler-wasm32
+- **npm 包页面**: https://www.npmjs.com/package/↯nyar/gaia-assembler-wasm32
 
 ---
 

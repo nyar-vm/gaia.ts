@@ -386,10 +386,10 @@ pie title TypeScript特性支持状态
 
 ## 🔗 与 Gaia 集成
 
-Mini-TS 使用 `@nyar/gaia-assembler-wasm32` 包来调用 Gaia 汇编器：
+Mini-TS 使用 `↯nyar/gaia-assembler-wasm32` 包来调用 Gaia 汇编器：
 
 ```typescript
-import { Assembler, Metadata, Utils } from '@nyar/gaia-assembler-wasm32';
+import { Assembler, Metadata, Utils } from '↯nyar/gaia-assembler-wasm32';
 
 // 创建汇编器实例
 const assembler = new Assembler();
@@ -414,7 +414,7 @@ flowchart TB
     end
     
     subgraph "Gaia WASM32 前端"
-        C --> D[@nyar/gaia-assembler-wasm32]
+        C --> D[↯nyar/gaia-assembler-wasm32]
         D --> E[汇编器实例]
         E --> F[编译结果]
     end

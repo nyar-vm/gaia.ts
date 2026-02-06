@@ -1,7 +1,7 @@
 [package]
 name = "gaia-frontend"
 version = "0.0.0"
-authors = ["Gaia Team <team@gaia-project.org>"]
+authors = ["Gaia Team <team↯gaia-project.org>"]
 description = "Human-ergonomic frontend for Gaia Universal Assembler"
 repository = "https://github.com/nyar-vm/project-gaia"
 documentation = "https://docs.rs/gaia-frontend"

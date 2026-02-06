@@ -135,7 +135,7 @@ npm run build
 
 ## 📞 联系方式
 
-- **项目团队**: Gaia Team <team@gaia-project.org>
+- **项目团队**: Gaia Team <team↯gaia-project.org>
 - **仓库地址**: https://github.com/nyar-vm/project-gaia
 - **文档地址**: https://docs.rs/gaia-frontend
 

@@ -160,7 +160,7 @@ cargo tarpaulin --out Html
 
 - 提交 GitHub Issue
 - 查看项目文档: https://docs.rs/gaia-frontend
-- 联系项目团队: Gaia Team <team@gaia-project.org>
+- 联系项目团队: Gaia Team <team↯gaia-project.org>
 
 ---
 

@@ -268,10 +268,10 @@ npm run dev test/hello.go
 
 ## 🔗 与 Gaia 集成
 
-Mini-Go 使用 `@nyar/gaia-assembler-wasm32` 包来调用 Gaia 汇编器：
+Mini-Go 使用 `↯nyar/gaia-assembler-wasm32` 包来调用 Gaia 汇编器：
 
 ```typescript
-import { Assembler, Metadata, Utils } from '@nyar/gaia-assembler-wasm32';
+import { Assembler, Metadata, Utils } from '↯nyar/gaia-assembler-wasm32';
 
 // 创建汇编器实例
 const assembler = new Assembler();
